@@ -1,0 +1,437 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>画像一括切り抜きツール</title>
+  <!-- ZIP作成用ライブラリ -->
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
+  <style>
+    :root {
+      --primary-color: #007aff;
+      --bg-color: #f2f2f7;
+      --card-bg: #ffffff;
+      --text-color: #1c1c1e;
+      --border-color: #c6c6c8;
+    }
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+      background-color: var(--bg-color);
+      color: var(--text-color);
+      margin: 0;
+      padding: 16px;
+      line-height: 1.5;
+    }
+    .container {
+      max-width: 600px;
+      margin: 0 auto;
+    }
+    h1 {
+      font-size: 1.4rem;
+      text-align: center;
+      margin-bottom: 20px;
+    }
+    .card {
+      background: var(--card-bg);
+      border-radius: 12px;
+      padding: 16px;
+      margin-bottom: 16px;
+      box-shadow: 0 2px 8px rgba(0,0,0,0.05);
+    }
+    .btn {
+      display: block;
+      width: 100%;
+      padding: 14px 0;
+      background-color: var(--primary-color);
+      color: white;
+      border: none;
+      border-radius: 10px;
+      font-size: 1rem;
+      font-weight: bold;
+      text-align: center;
+      cursor: pointer;
+      box-sizing: border-box;
+      margin-bottom: 10px;
+    }
+    .btn:disabled {
+      background-color: #a2a2a7;
+      cursor: not-allowed;
+    }
+    .btn-secondary {
+      background-color: #8e8e93;
+    }
+    .btn-outline {
+      background-color: transparent;
+      color: var(--primary-color);
+      border: 1px solid var(--primary-color);
+    }
+    input[type="file"] {
+      display: none;
+    }
+    .status-text {
+      font-size: 0.9rem;
+      color: #666;
+      text-align: center;
+      margin: 8px 0;
+    }
+    .form-group {
+      margin-bottom: 12px;
+    }
+    .form-group label {
+      display: block;
+      font-size: 0.85rem;
+      color: #666;
+      margin-bottom: 4px;
+    }
+    .form-group input, .form-group select {
+      width: 100%;
+      padding: 10px;
+      border: 1px solid var(--border-color);
+      border-radius: 8px;
+      font-size: 1rem;
+      box-sizing: border-box;
+    }
+    .flex-row {
+      display: flex;
+      gap: 10px;
+    }
+    .flex-row .form-group {
+      flex: 1;
+    }
+    .preview-container {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(100px, 1fr));
+      gap: 8px;
+      max-height: 300px;
+      overflow-y: auto;
+      margin-top: 12px;
+    }
+    .preview-item img {
+      width: 100%;
+      height: 100px;
+      object-fit: contain;
+      background: #e5e5ea;
+      border-radius: 6px;
+    }
+    details summary {
+      cursor: pointer;
+      font-weight: bold;
+      color: var(--primary-color);
+      padding: 8px 0;
+    }
+  </style>
+</head>
+<body>
+
+<div class="container">
+  <h1>画像一括切り抜きツール</h1>
+
+  <!-- メイン操作エリア -->
+  <div class="card">
+    <label for="imageInput" class="btn">写真を選択する</label>
+    <input type="file" id="imageInput" accept="image/*" multiple>
+    
+    <div id="fileStatus" class="status-text">画像が選択されていません</div>
+    <div id="activeTemplateText" class="status-text" style="font-size: 0.8rem; color: #8e8e93;">
+      使用テンプレート: iPhoneスクショ標準
+    </div>
+
+    <button id="processBtn" class="btn" disabled>一括切り抜き実行</button>
+    <button id="downloadBtn" class="btn btn-secondary" style="display:none;">ZIPで保存</button>
+
+    <!-- プレビュー表示 -->
+    <div id="previewArea" class="preview-container"></div>
+  </div>
+
+  <!-- 設定・テンプレートエリア -->
+  <div class="card">
+    <details id="settingsDetails">
+      <summary>設定・テンプレート変更</summary>
+      
+      <div style="margin-top: 16px;">
+        <div class="form-group">
+          <label>テンプレートの切り替え</label>
+          <select id="templateSelect"></select>
+        </div>
+        
+        <div class="flex-row">
+          <button id="saveTplBtn" class="btn btn-outline" style="font-size: 0.8rem; padding: 8px;">新規テンプレート保存</button>
+          <button id="resetTplBtn" class="btn btn-outline" style="font-size: 0.8rem; padding: 8px; color: #ff3b30; border-color: #ff3b30;">デフォルトに戻す</button>
+        </div>
+
+        <hr style="border: none; border-top: 1px solid var(--border-color); margin: 16px 0;">
+
+        <h3>位置・サイズ設定</h3>
+        <div class="flex-row">
+          <div class="form-group">
+            <label>X移動量 (px)</label>
+            <input type="number" id="moveX" value="0">
+          </div>
+          <div class="form-group">
+            <label>Y移動量 (px)</label>
+            <input type="number" id="moveY" value="-482">
+          </div>
+        </div>
+
+        <div class="flex-row">
+          <div class="form-group">
+            <label>切り抜き幅 (px)</label>
+            <input type="number" id="cropW" value="1179">
+          </div>
+          <div class="form-group">
+            <label>切り抜き高さ (px)</label>
+            <input type="number" id="cropH" value="311">
+          </div>
+        </div>
+
+        <div class="flex-row">
+          <div class="form-group">
+            <label>出力画像幅 (px)</label>
+            <input type="number" id="outW" value="1179">
+          </div>
+          <div class="form-group">
+            <label>出力画像高さ (px)</label>
+            <input type="number" id="outH" value="311">
+          </div>
+        </div>
+      </div>
+    </details>
+  </div>
+</div>
+
+<script>
+  // 初期テンプレート（iPhoneスクショ標準）
+  const DEFAULT_SETTINGS = {
+    name: "iPhoneスクショ標準",
+    moveX: 0,
+    moveY: -482,
+    cropW: 1179,
+    cropH: 311,
+    outW: 1179,
+    outH: 311
+  };
+
+  let selectedFiles = [];
+  let processedBlobs = []; // { name: string, blob: Blob }
+  let templates = {};
+
+  // DOM要素
+  const imageInput = document.getElementById('imageInput');
+  const fileStatus = document.getElementById('fileStatus');
+  const processBtn = document.getElementById('processBtn');
+  const downloadBtn = document.getElementById('downloadBtn');
+  const previewArea = document.getElementById('previewArea');
+  const templateSelect = document.getElementById('templateSelect');
+  const activeTemplateText = document.getElementById('activeTemplateText');
+
+  // 設定入力項目
+  const inputs = {
+    moveX: document.getElementById('moveX'),
+    moveY: document.getElementById('moveY'),
+    cropW: document.getElementById('cropW'),
+    cropH: document.getElementById('cropH'),
+    outW: document.getElementById('outW'),
+    outH: document.getElementById('outH')
+  };
+
+  // 初期化処理
+  window.addEventListener('DOMContentLoaded', () => {
+    loadTemplates();
+    loadLastSettings();
+    updateUIFromSettings();
+  });
+
+  // ファイル選択時
+  imageInput.addEventListener('change', (e) => {
+    selectedFiles = Array.from(e.target.files);
+    if (selectedFiles.length > 0) {
+      fileStatus.textContent = `${selectedFiles.length} 枚の画像を選択中`;
+      processBtn.disabled = false;
+    } else {
+      fileStatus.textContent = '画像が選択されていません';
+      processBtn.disabled = true;
+    }
+    downloadBtn.style.display = 'none';
+    previewArea.innerHTML = '';
+  });
+
+  // 一括切り抜き実行
+  processBtn.addEventListener('click', async () => {
+    if (selectedFiles.length === 0) return;
+
+    processBtn.disabled = true;
+    processBtn.textContent = '処理中...';
+    previewArea.innerHTML = '';
+    processedBlobs = [];
+
+    const config = getCurrentConfig();
+    saveLastSettings(config);
+
+    for (let i = 0; i < selectedFiles.length; i++) {
+      const file = selectedFiles[i];
+      try {
+        const croppedBlob = await processImage(file, config);
+        const fileName = file.name.replace(/\.[^/.]+$/, "") + "_cropped.png";
+        processedBlobs.push({ name: fileName, blob: croppedBlob });
+
+        // プレビュー用サムネイル追加
+        const imgUrl = URL.createObjectURL(croppedBlob);
+        const item = document.createElement('div');
+        item.className = 'preview-item';
+        item.innerHTML = `<img src="${imgUrl}" alt="preview">`;
+        previewArea.appendChild(item);
+
+      } catch (err) {
+        console.error(`画像処理エラー (${file.name}):`, err);
+      }
+    }
+
+    processBtn.textContent = '一括切り抜き実行';
+    processBtn.disabled = false;
+    downloadBtn.style.display = 'block';
+    fileStatus.textContent = `処理完了: ${processedBlobs.length} 枚`;
+  });
+
+  // 1枚の画像切り抜き処理 (Canvas API)
+  function processImage(file, config) {
+    return new Promise((resolve, reject) => {
+      const img = new Image();
+      img.onload = () => {
+        const canvas = document.createElement('canvas');
+        canvas.width = config.outW;
+        canvas.height = config.outH;
+        const ctx = canvas.getContext('2d');
+
+        // 透明度の維持設定
+        ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+        // 描画位置の計算
+        // 仕様: キャンバス中央に範囲を置き、指定移動量を加算
+        // 描画先の左上位置 = (キャンバス幅 - 元画像幅)/2 + X移動量
+        const destX = ((config.outW - img.width) / 2) + config.moveX;
+        const destY = ((config.outH - img.height) / 2) + config.moveY;
+
+        // 画像を描画
+        ctx.drawImage(img, destX, destY);
+
+        canvas.toBlob((blob) => {
+          if (blob) resolve(blob);
+          else reject(new Error('Canvas to Blob conversion failed'));
+        }, 'image/png');
+      };
+      img.onerror = reject;
+      img.src = URL.createObjectURL(file);
+    });
+  }
+
+  // ZIPダウンロード処理
+  downloadBtn.addEventListener('click', async () => {
+    if (processedBlobs.length === 0) return;
+
+    const zip = new JSZip();
+    processedBlobs.forEach(item => {
+      zip.file(item.name, item.blob);
+    });
+
+    const content = await zip.generateAsync({ type: 'blob' });
+    const link = document.createElement('a');
+    link.href = URL.createObjectURL(content);
+    link.download = `cropped_images_${Date.now()}.zip`;
+    link.click();
+  });
+
+  // 現在の入力設定値を取得
+  function getCurrentConfig() {
+    return {
+      moveX: parseInt(inputs.moveX.value, 10) || 0,
+      moveY: parseInt(inputs.moveY.value, 10) || 0,
+      cropW: parseInt(inputs.cropW.value, 10) || 1179,
+      cropH: parseInt(inputs.cropH.value, 10) || 311,
+      outW: parseInt(inputs.outW.value, 10) || 1179,
+      outH: parseInt(inputs.outH.value, 10) || 311
+    };
+  }
+
+  // 設定値を画面に反映
+  function applyConfigToUI(config) {
+    inputs.moveX.value = config.moveX;
+    inputs.moveY.value = config.moveY;
+    inputs.cropW.value = config.cropW;
+    inputs.cropH.value = config.cropH;
+    inputs.outW.value = config.outW;
+    inputs.outH.value = config.outH;
+  }
+
+  // ストレージ関連（設定＆テンプレート保存）
+  function loadTemplates() {
+    const saved = localStorage.getItem('crop_templates');
+    if (saved) {
+      templates = JSON.parse(saved);
+    } else {
+      templates = { [DEFAULT_SETTINGS.name]: DEFAULT_SETTINGS };
+      saveTemplates();
+    }
+    renderTemplateSelect();
+  }
+
+  function saveTemplates() {
+    localStorage.setItem('crop_templates', JSON.stringify(templates));
+  }
+
+  function renderTemplateSelect() {
+    templateSelect.innerHTML = '';
+    Object.keys(templates).forEach(name => {
+      const option = document.createElement('option');
+      option.value = name;
+      option.textContent = name;
+      templateSelect.appendChild(option);
+    });
+  }
+
+  function saveLastSettings(config) {
+    localStorage.setItem('crop_last_config', JSON.stringify(config));
+  }
+
+  function loadLastSettings() {
+    const last = localStorage.getItem('crop_last_config');
+    if (last) {
+      applyConfigToUI(JSON.parse(last));
+    } else {
+      applyConfigToUI(DEFAULT_SETTINGS);
+    }
+  }
+
+  // テンプレート変更時
+  templateSelect.addEventListener('change', (e) => {
+    const name = e.target.value;
+    if (templates[name]) {
+      applyConfigToUI(templates[name]);
+      activeTemplateText.textContent = `使用テンプレート: ${name}`;
+    }
+  });
+
+  // 新規テンプレート保存
+  document.getElementById('saveTplBtn').addEventListener('click', () => {
+    const name = prompt('テンプレート名を入力してください:', 'カスタムテンプレート');
+    if (name) {
+      const config = getCurrentConfig();
+      config.name = name;
+      templates[name] = config;
+      saveTemplates();
+      renderTemplateSelect();
+      templateSelect.value = name;
+      activeTemplateText.textContent = `使用テンプレート: ${name}`;
+    }
+  });
+
+  // デフォルトに戻す
+  document.getElementById('resetTplBtn').addEventListener('click', () => {
+    if (confirm('デフォルト設定に戻しますか？')) {
+      applyConfigToUI(DEFAULT_SETTINGS);
+      templateSelect.value = DEFAULT_SETTINGS.name;
+      activeTemplateText.textContent = `使用テンプレート: ${DEFAULT_SETTINGS.name}`;
+    }
+  });
+</script>
+</body>
+</html>
